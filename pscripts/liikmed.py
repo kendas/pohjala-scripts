@@ -1,5 +1,6 @@
-from argparse import ArgumentParser
+from argparse import ArgumentParser, FileType
 from collections import namedtuple
+from csv import DictReader
 from io import StringIO
 from itertools import groupby
 import re
@@ -38,19 +39,39 @@ Liige = namedtuple('Liige',
 
 def main():
     args = parse_args()
-    tabel = [
-        Liige('Esimene Liige', '', '123456789', 'a@b.c', 'abcd', '', '??', 'ei', 'märkus'),
-        Liige('Teine Liige', '', '123456789', 'a@b.cd', 'abcde', '', '???', 'jah', ''),
-        Liige('Kolmas Tiige', '', '123456789', 'a@b.cd', 'abcde', '', '???', 'jah', ''),
-    ]
-    print(formaadi_wiki(tabel))
+
+    print(formaadi_wiki(loe_csv(args.sisend)))
+
+
+def loe_csv(fail):
+    """
+    Loeb csv failist read ja tagastab nendele vastavad liikme kirjeldused
+    :param file fail: Avatud csv fail.
+    :return: Liikmete kirjeldused
+    :rtype: list[Liige]
+    """
+    with fail:
+        luger = DictReader(fail)
+        for rida in luger:
+            yield Liige(rida['nimi'],
+                        '',
+                        rida['telefon'],
+                        rida['e-post'],
+                        rida['aadress'],
+                        rida['skype'],
+                        rida['tegevusvaldkond'],
+                        rida['paberpost'],
+                        rida['märkused'])
 
 
 def parse_args():
     parser = ArgumentParser(description="Võtab Google Spreatsheet'i tabelist liikmete "
                                         "nimekirja ja vormindab selle wiki formaati.")
-    parser.add_argument('spreadsheet',
-                        help="Link Google Spreatsheet'ini")
+    # parser.add_argument('spreadsheet',
+    #                     help="Link Google Spreatsheet'ini")
+    parser.add_argument('sisend',
+                        type=FileType('r'),
+                        help="Sisendfail (csv)")
     return parser.parse_args()
 
 
@@ -64,7 +85,7 @@ def formaadi_wiki(tabel):
     tahestik = list(TAHESTIK)
     valjund = StringIO()
     valjund.write(WIKI_HEADER)
-    i = 0   # Tühi tabel ajab asja sassi muidu
+    i = 0
     for grupp, liikmed in groupby(sorted(tabel, key=formaadi_nimi), key=perekonnanime_esitaht):
         # Leiame vahele jäänud tähestiku tähed
         try:
@@ -74,7 +95,7 @@ def formaadi_wiki(tabel):
         grupid = tahestik[:index]
         tahestik = tahestik[index:]
 
-        for liige in liikmed:
+        for i, liige in enumerate(liikmed, start=i):
             valjund.write(WIKI_ROW.format(style='style="background:#f5faff"' if i % 2 == 1 else '',
                                           anchors=''.join('<span id="{}"></span>'.format(taht)
                                                           for taht in grupid),
@@ -87,8 +108,8 @@ def formaadi_wiki(tabel):
                                           tegevusala=liige.tegevusala,
                                           paberpost=liige.paberpost,
                                           markused=liige.markused))
-            grupid = []
-            i += 1
+            if grupid:
+                grupid = []
     valjund.write(WIKI_FOOTER.format(style='style="background:#f5faff"' if i % 2 == 1 else '',
                                      lingid=LINGID))
     return valjund.getvalue()
@@ -109,9 +130,11 @@ def formaadi_nimi(liige):
             osad.pop(-1)
         else:
             break
+    # Formaadime viimase (perekonnanime) ja ülejäänud osa (eesnimed)
     if osad:
         return skeem.format(perekonnanimi=osad[-1],
                             eesnimed=' '.join(osad[:-1]))
+    # Juhuks, kui mingil põhjusel nimi on tühi väli või kõik osad on sulgudega
     return ''
 
 
