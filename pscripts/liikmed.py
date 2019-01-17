@@ -4,9 +4,10 @@ from csv import DictReader
 from io import StringIO
 from itertools import groupby
 import re
+import sys
 
 
-TAHESTIK = 'ABCDEFGHIJKLMNOPQRSŠZŽTUVÕÄÖÜXY'
+TAHESTIK = 'ABCDEFGHIJKLMNOPQRSŠZŽTUVWÕÄÖÜXY'
 LINGID = ' · '.join('[[#{taht}|{taht}]]'.format(taht=t) for t in TAHESTIK)
 WIKI_HEADER = """{{| cellpadding="4" style="border:1px #AAA solid; background:#F9F9F9; text-align: center;"
 |-
@@ -39,8 +40,8 @@ Liige = namedtuple('Liige',
 
 def main():
     args = parse_args()
-
-    print(formaadi_wiki(loe_csv(args.sisend)))
+    with args.valjund as valjund:
+        valjund.write(formaadi_wiki(loe_csv(args.sisend)))
 
 
 def loe_csv(fail):
@@ -53,15 +54,16 @@ def loe_csv(fail):
     with fail:
         luger = DictReader(fail)
         for rida in luger:
-            yield Liige(rida['nimi'],
-                        '',
-                        rida['telefon'],
-                        rida['e-post'],
-                        rida['aadress'],
-                        rida['skype'],
-                        rida['tegevusvaldkond'],
-                        rida['paberpost'],
-                        rida['märkused'])
+            if rida['nimi'].strip():
+                yield Liige(rida['nimi'].strip(),
+                            '',
+                            rida['telefon'],
+                            rida['e-post'],
+                            rida['aadress'],
+                            rida['skype'],
+                            rida['tegevusvaldkond'],
+                            rida['paberpost'],
+                            rida['märkused'])
 
 
 def parse_args():
@@ -71,7 +73,14 @@ def parse_args():
     #                     help="Link Google Spreatsheet'ini")
     parser.add_argument('sisend',
                         type=FileType('r'),
-                        help="Sisendfail (csv)")
+                        nargs='?',
+                        default=sys.stdin,
+                        help="Sisendfail (csv) - vaikimisi stdin")
+    parser.add_argument('valjund',
+                        type=FileType('w'),
+                        nargs='?',
+                        default=sys.stdout,
+                        help="valjundfail (WikiMedia formaat) - vaikimisi stdout")
     return parser.parse_args()
 
 
@@ -85,8 +94,9 @@ def formaadi_wiki(tabel):
     tahestik = list(TAHESTIK)
     valjund = StringIO()
     valjund.write(WIKI_HEADER)
-    i = 0
-    for grupp, liikmed in groupby(sorted(tabel, key=formaadi_nimi), key=perekonnanime_esitaht):
+    i = -1
+    for grupp, liikmed in groupby(sorted(tabel, key=lambda n: tahestiku_jarjekord(formaadi_nimi(n))),
+                                  key=perekonnanime_esitaht):
         # Leiame vahele jäänud tähestiku tähed
         try:
             index = tahestik.index(grupp) + 1
@@ -95,7 +105,7 @@ def formaadi_wiki(tabel):
         grupid = tahestik[:index]
         tahestik = tahestik[index:]
 
-        for i, liige in enumerate(liikmed, start=i):
+        for i, liige in enumerate(liikmed, start=i + 1):
             valjund.write(WIKI_ROW.format(style='style="background:#f5faff"' if i % 2 == 1 else '',
                                           anchors=''.join('<span id="{}"></span>'.format(taht)
                                                           for taht in grupid),
@@ -126,7 +136,7 @@ def formaadi_nimi(liige):
     # Käime tagant poolt ettepoole ja otsime esimest sulgudeta nimeosa
     osad = liige.nimi.split(' ')
     while osad:
-        if re.match(r'\(\w+\)', osad[-1]):
+        if re.match(r'\(.*\)', osad[-1]):
             osad.pop(-1)
         else:
             break
@@ -149,6 +159,13 @@ def perekonnanime_esitaht(liige):
         return formaat[0].upper()
     else:
         return ''
+
+
+def tahestiku_jarjekord(sona):
+    return [
+        TAHESTIK.index(t.upper()) if t.upper() in TAHESTIK else 100 + ord(t)
+        for t in sona
+    ]
 
 
 if __name__ == '__main__':
